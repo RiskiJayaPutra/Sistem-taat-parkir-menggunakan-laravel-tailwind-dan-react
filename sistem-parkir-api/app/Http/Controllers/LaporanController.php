@@ -17,7 +17,9 @@ class LaporanController extends Controller
     {
         $validatedData = $request->validate([
             'plat_nomor_terlapor' => 'required|string|max:10',
-            'foto' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            'deskripsi' => 'required|string|min:10',
+            'fotos' => 'required|array|min:1|max:5', // Support multiple foto (1-5)
+            'fotos.*' => 'image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
         $kendaraan = Kendaraan::where('plat_nomor', $validatedData['plat_nomor_terlapor'])->first();
@@ -27,17 +29,24 @@ class LaporanController extends Controller
             ], 404);
         }
 
-        $path = $request->file('foto')->store('laporan', 'public');
+        // Upload multiple foto
+        $fotoPaths = [];
+        foreach ($request->file('fotos') as $foto) {
+            $path = $foto->store('laporan', 'public');
+            $fotoPaths[] = $path;
+        }
 
         $laporan = LaporanPelanggaran::create([
             'pelapor_id' => Auth::id(),
             'plat_nomor_terlapor' => $validatedData['plat_nomor_terlapor'],
-            'url_foto_bukti' => $path,
+            'deskripsi' => $validatedData['deskripsi'],
+            'url_foto_bukti' => $fotoPaths[0], // Foto utama = foto pertama
+            'foto_pelanggaran' => $fotoPaths,  // Simpan semua foto
             'status' => 'Pending',
         ]);
 
         return response()->json([
-            'message' => 'Laporan berhasil dikirim dan sedang menunggu validasi.',
+            'message' => 'Laporan berhasil dikirim dengan ' . count($fotoPaths) . ' foto. Satu laporan hanya untuk 1 kendaraan.',
             'data' => $laporan
         ], 201);
     }
@@ -114,8 +123,8 @@ class LaporanController extends Controller
         $statusParkir->save();
 
         $laporan->status = 'Valid';
-        $laporan->validator_id = $request->user()->id;
-        $laporan->waktu_validasi = Carbon::now();
+        $laporan->validated_by = $request->user()->id;
+        $laporan->validated_at = Carbon::now();
         $laporan->save();
 
         return response()->json([
@@ -141,8 +150,8 @@ class LaporanController extends Controller
         }
 
         $laporan->status = 'Ditolak';
-        $laporan->validator_id = $request->user()->id;
-        $laporan->waktu_validasi = Carbon::now();
+        $laporan->validated_by = $request->user()->id;
+        $laporan->validated_at = Carbon::now();
         $laporan->save();
 
         return response()->json([
@@ -171,62 +180,6 @@ class LaporanController extends Controller
     }
 
     /**
-     * Update laporan oleh mahasiswa (hanya jika status masih Pending).
-     */
-    public function updateLaporan(Request $request, $id)
-    {
-        $laporan = LaporanPelanggaran::find($id);
-        
-        if (!$laporan) {
-            return response()->json(['message' => 'Laporan tidak ditemukan'], 404);
-        }
-
-        // Cek apakah yang update adalah pelapor
-        if ($laporan->pelapor_id !== Auth::id()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        // Hanya bisa update jika status masih Pending
-        if ($laporan->status !== 'Pending') {
-            return response()->json(['message' => 'Laporan sudah diproses, tidak bisa diubah'], 400);
-        }
-
-        $validatedData = $request->validate([
-            'plat_nomor_terlapor' => 'required|string|max:10',
-            'foto' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-        ]);
-
-        // Cek apakah plat nomor terdaftar
-        $kendaraan = Kendaraan::where('plat_nomor', $validatedData['plat_nomor_terlapor'])->first();
-        if (!$kendaraan) {
-            return response()->json([
-                'message' => 'Plat nomor tidak terdaftar di sistem.'
-            ], 404);
-        }
-
-        // Update plat nomor
-        $laporan->plat_nomor_terlapor = $validatedData['plat_nomor_terlapor'];
-
-        // Update foto jika ada
-        if ($request->hasFile('foto')) {
-            // Hapus foto lama
-            if ($laporan->url_foto_bukti) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($laporan->url_foto_bukti);
-            }
-            // Simpan foto baru
-            $path = $request->file('foto')->store('laporan', 'public');
-            $laporan->url_foto_bukti = $path;
-        }
-
-        $laporan->save();
-
-        return response()->json([
-            'message' => 'Laporan berhasil diupdate',
-            'data' => $laporan
-        ], 200);
-    }
-
-    /**
      * Hapus laporan oleh mahasiswa (hanya jika status masih Pending).
      */
     public function deleteLaporan(Request $request, $id)
@@ -247,15 +200,86 @@ class LaporanController extends Controller
             return response()->json(['message' => 'Laporan sudah diproses, tidak bisa dihapus'], 400);
         }
 
-        // Hapus foto
-        if ($laporan->url_foto_bukti) {
-            \Illuminate\Support\Facades\Storage::disk('public')->delete($laporan->url_foto_bukti);
-        }
-
-        $laporan->delete();
+        // Set cancelled_at timestamp instead of hard delete
+        $laporan->cancelled_at = Carbon::now();
+        $laporan->status = 'Dibatalkan';
+        $laporan->save();
 
         return response()->json([
             'message' => 'Laporan berhasil dibatalkan'
         ], 200);
+    }
+
+    /**
+     * Update laporan oleh mahasiswa (hanya jika status Pending)
+     */
+    public function updateLaporan(Request $request, $id)
+    {
+        $laporan = LaporanPelanggaran::find($id);
+        
+        if (!$laporan) {
+            return response()->json(['message' => 'Laporan tidak ditemukan'], 404);
+        }
+
+        if ($laporan->pelapor_id !== Auth::id()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($laporan->status !== 'Pending') {
+            return response()->json(['message' => 'Laporan sudah diproses, tidak bisa diedit'], 400);
+        }
+
+        $validatedData = $request->validate([
+            'plat_nomor_terlapor' => 'sometimes|required|string|max:10',
+            'deskripsi' => 'sometimes|required|string|min:10',
+            'fotos' => 'sometimes|array|max:5',
+            'fotos.*' => 'image|mimes:jpeg,png,jpg|max:2048',
+        ]);
+
+        if (isset($validatedData['plat_nomor_terlapor'])) {
+            $kendaraan = Kendaraan::where('plat_nomor', $validatedData['plat_nomor_terlapor'])->first();
+            if (!$kendaraan) {
+                return response()->json(['message' => 'Plat nomor tidak terdaftar'], 404);
+            }
+            $laporan->plat_nomor_terlapor = $validatedData['plat_nomor_terlapor'];
+        }
+
+        if (isset($validatedData['deskripsi'])) {
+            $laporan->deskripsi = $validatedData['deskripsi'];
+        }
+
+        if ($request->hasFile('fotos')) {
+            $existingPhotos = $laporan->foto_pelanggaran ?? [];
+            foreach ($request->file('fotos') as $foto) {
+                $path = $foto->store('laporan', 'public');
+                $existingPhotos[] = $path;
+            }
+            $laporan->foto_pelanggaran = $existingPhotos;
+            if (!empty($existingPhotos)) {
+                $laporan->url_foto_bukti = $existingPhotos[0];
+            }
+        }
+
+        $laporan->save();
+        return response()->json(['message' => 'Laporan berhasil diupdate', 'data' => $laporan], 200);
+    }
+
+    public function unvalidasiLaporan(Request $request, $id)
+    {
+        if ($request->user()->role !== 'Satpam') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $laporan = LaporanPelanggaran::find($id);
+        if (!$laporan || $laporan->status !== 'Valid') {
+            return response()->json(['message' => 'Tidak dapat di-unvalidasi'], 400);
+        }
+
+        $laporan->status = 'Pending';
+        $laporan->unvalidated_at = Carbon::now();
+        $laporan->unvalidated_by = $request->user()->id;
+        $laporan->save();
+
+        return response()->json(['message' => 'Laporan berhasil di-unvalidasi'], 200);
     }
 }

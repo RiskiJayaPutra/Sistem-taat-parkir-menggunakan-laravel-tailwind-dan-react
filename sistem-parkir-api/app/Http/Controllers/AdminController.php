@@ -84,6 +84,54 @@ class AdminController extends Controller
         return response()->json($satpam, 200);
     }
 
+    public function getSatpamById(Request $request, $id)
+    {
+        if ($request->user()->role !== 'Admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $satpam = User::where('id', $id)->where('role', 'Satpam')->first();
+
+        if (!$satpam) {
+            return response()->json(['message' => 'Satpam tidak ditemukan'], 404);
+        }
+
+        return response()->json($satpam, 200);
+    }
+
+    public function updateSatpam(Request $request, $id)
+    {
+        if ($request->user()->role !== 'Admin') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $user = User::where('id', $id)->where('role', 'Satpam')->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'Satpam tidak ditemukan'], 404);
+        }
+
+        $validatedData = $request->validate([
+            'username' => 'required|string|max:255|unique:users,username,' . $id,
+            'nama' => 'required|string|max:255',
+            'password' => 'nullable|string|min:6',
+        ]);
+
+        $user->username = $validatedData['username'];
+        $user->nama = $validatedData['nama'];
+        
+        if ($request->filled('password')) {
+            $user->password = Hash::make($validatedData['password']);
+        }
+        
+        $user->save();
+
+        return response()->json([
+            'message' => 'Akun satpam berhasil diperbarui',
+            'user' => $user
+        ], 200);
+    }
+
     public function deleteSatpam(Request $request, $id)
     {
         if ($request->user()->role !== 'Admin') {

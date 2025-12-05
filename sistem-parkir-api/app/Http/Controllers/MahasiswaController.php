@@ -214,9 +214,47 @@ class MahasiswaController extends Controller
      */
     public function getMyDashboard(Request $request)
     {
+        $user = $request->user();
+        
+        // Jika Satpam, kembalikan semua laporan untuk divalidasi
+        if ($user->role === 'Satpam') {
+            $semuaLaporan = \App\Models\LaporanPelanggaran::with([
+                    'pelapor:id,nama,username',
+                    'validator:id,nama,username'
+                ])
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->map(function($laporan) {
+                    return [
+                        'id' => $laporan->id,
+                        'plat_nomor_terlapor' => $laporan->plat_nomor_terlapor,
+                        'deskripsi' => $laporan->deskripsi,
+                        'url_foto_bukti' => $laporan->url_foto_bukti,
+                        'foto_pelanggaran' => $laporan->foto_pelanggaran,
+                        'status' => $laporan->status,
+                        'alasan_penolakan' => $laporan->alasan_penolakan,
+                        'created_at' => $laporan->created_at,
+                        'pelapor' => $laporan->pelapor ? [
+                            'nama' => $laporan->pelapor->nama ?? $laporan->pelapor->username,
+                            'username' => $laporan->pelapor->username,
+                        ] : null,
+                        'validator' => $laporan->validator ? [
+                            'nama' => $laporan->validator->nama ?? $laporan->validator->username,
+                            'username' => $laporan->validator->username,
+                        ] : null,
+                    ];
+                });
+            
+            return response()->json([
+                'nama' => $user->nama ?? $user->username,
+                'role' => 'Satpam',
+                'laporan' => $semuaLaporan,
+            ]);
+        }
+        
         // Cari mahasiswa berdasarkan user_id
-        $mahasiswa = Mahasiswa::where('user_id', $request->user()->id)
-                        ->with(['statusParkir', 'kendaraan', 'prodi'])
+        $mahasiswa = Mahasiswa::where('user_id', $user->id)
+                        ->with(['statusParkir', 'kendaraan', 'prodi', 'user'])
                         ->first();
         
         if (!$mahasiswa) {
@@ -234,7 +272,7 @@ class MahasiswaController extends Controller
             ->count();
         
         // Ambil laporan yang dibuat mahasiswa
-        $laporanSaya = \App\Models\LaporanPelanggaran::where('pelapor_id', $request->user()->id)
+        $laporanSaya = \App\Models\LaporanPelanggaran::where('pelapor_id', $user->id)
             ->orderBy('created_at', 'desc')
             ->get();
         
@@ -275,7 +313,7 @@ class MahasiswaController extends Controller
             });
         
         return response()->json([
-            'nama' => $mahasiswa->nama,
+            'nama' => $mahasiswa->user->nama ?? $mahasiswa->user->username,
             'npm' => $mahasiswa->npm,
             'prodi' => $mahasiswa->prodi->nama_prodi ?? '-',
             'status_parkir' => $isBanned ? 'Terblokir' : 'Aktif',

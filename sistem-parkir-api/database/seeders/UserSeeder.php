@@ -20,6 +20,7 @@ class UserSeeder extends Seeder
         // 1. BUAT AKUN ADMIN
         User::create([
             'username' => 'admin',
+            'nama' => 'Administrator',
             'password' => Hash::make('password'), // passwordnya: 'password'
             'role' => 'Admin'
         ]);
@@ -27,6 +28,7 @@ class UserSeeder extends Seeder
         // 2. BUAT AKUN SATPAM
         User::create([
             'username' => 'satpam01',
+            'nama' => 'Satpam Satu',
             'password' => Hash::make('password'), // passwordnya: 'password'
             'role' => 'Satpam'
         ]);
@@ -35,6 +37,7 @@ class UserSeeder extends Seeder
         // Saat buat akun mahasiswa, kita juga buat data profilnya
         $mahasiswaUser = User::create([
             'username' => '111222333', // Ini NPM-nya
+            'nama' => 'Budi Santoso',
             'password' => Hash::make('password'), // passwordnya: 'password'
             'role' => 'Mahasiswa'
         ]);

@@ -12,20 +12,26 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        $request->validate([
-            'username' => 'required',
-            'password' => 'required',
+        // Validasi input - pastikan hanya username dan password
+        $validated = $request->validate([
+            'username' => 'required|string',
+            'password' => 'required|string',
         ]);
 
-        $user = User::where('username', $request->username)->first();
+        // Cari user berdasarkan username
+        $user = User::where('username', $validated['username'])->first();
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
+        // Cek apakah user ada dan password cocok
+        if (! $user || ! Hash::check($validated['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'username' => ['Username atau password salah.'],
             ]);
         }
 
+        // Hapus token lama
         $user->tokens()->delete();
+        
+        // Buat token baru
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([

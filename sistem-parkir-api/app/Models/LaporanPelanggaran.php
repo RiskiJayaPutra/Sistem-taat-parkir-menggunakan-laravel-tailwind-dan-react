@@ -22,12 +22,31 @@ class LaporanPelanggaran extends Model
      * @var array
      */
     protected $fillable = [
-        'pelapor_id',           // <-- Kolom BARU
-        'plat_nomor_terlapor',  // <-- Tetap ADA
+        'pelapor_id',
+        'plat_nomor_terlapor',
+        'deskripsi',
         'url_foto_bukti',
+        'foto_pelanggaran',    // JSON array untuk multiple foto
         'status',
-        'validator_id',
-        'waktu_validasi',
+        'validated_by',
+        'validated_at',
+        'cancelled_at',
+        'unvalidated_at',      // Field baru untuk unvalidasi
+        'unvalidated_by',      // Field baru untuk tracking siapa yang unvalidasi
+    ];
+
+    /**
+     * Atribut yang harus di-cast ke tipe data tertentu.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'validated_at' => 'datetime',
+        'cancelled_at' => 'datetime',
+        'unvalidated_at' => 'datetime',
+        'foto_pelanggaran' => 'array',  // Cast JSON ke array
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     /**
@@ -36,7 +55,7 @@ class LaporanPelanggaran extends Model
     public function validator()
     {
         // Relasi ke User (sebagai validator)
-        return $this->belongsTo(User::class, 'validator_id');
+        return $this->belongsTo(User::class, 'validated_by');
     }
 
     /**
